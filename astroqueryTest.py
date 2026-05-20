@@ -2,8 +2,8 @@
 # pip3 install --pre --upgrade astroquery
 
 from astroquery.jplhorizons import Horizons
-mars = Horizons(id=499, location = '000', epochs=None, id_type=None)
-eph = mars.ephemerides()
+jamesWebb = Horizons(id='jwst', location = '000', epochs=None, id_type=None)
+eph = jamesWebb.ephemerides()
 print(eph)
 
 print(eph['AZ'][0])
