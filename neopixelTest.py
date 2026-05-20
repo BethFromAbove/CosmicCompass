@@ -1,3 +1,8 @@
+# sudo apt update
+# sudo apt install python3-pip
+# pip3 install rpi_ws281x adafruit-circuitpython-neopixel
+# pip3 install --force-reinstall adafruit-blinka
+
 import time
 import board
 import neopixel
