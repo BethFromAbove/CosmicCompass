@@ -1,4 +1,4 @@
-#Bringing it all together
+# Testing neopixels, buttons and stepper motors together
 
 import RPi.GPIO as GPIO
 import time
@@ -6,16 +6,16 @@ import sys
 import termios
 import tty
 import neopixel
-from astroquery.jplhorizons import Horizons
 
-selectBtnPin = 33
-incBtnPin = 37
-decBtnPin = 35
-targetIndex = 0 # bodies?
-pixel_pin = board.D18
+selectBtnPin = 26
+incBtnPin = 5
+decBtnPin = 6
+pixel_pin = 18
+
 num_pixels = 8
+targetIndex = 0
 #planets = [199, 299, 301, 499, 599, 699, 799, 899, 999]
-planets = ['Mercury', 'Venus', 'Moon', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'jwst', 'voyager 1', 'andromeda']
+#bodies = ['Mercury', 'Venus', 'Moon', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'jwst', 'voyager 1', 'andromeda']
 
 # ------------------------
 # GPIO SETUP
@@ -32,8 +32,6 @@ for motor in (MOTOR1, MOTOR2):
     GPIO.setup(motor["EN"], GPIO.OUT)
     GPIO.output(motor["EN"], GPIO.LOW)  # Enable (LOW for most drivers)
     
-# GPIO.setmode(GPIO.BOARD) !!! change btn pins above to be BCM number not board number !!
-
 GPIO.setup(selectBtnPin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(incBtnPin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(decBtnPin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -72,10 +70,10 @@ def get_key():
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         
-def getPlanetInfo(planet):
-    obj = Horizons(id=planet, location='000', epochs=None, id_type=None)
-    eph = obj.ephemerides()
-    return eph
+# def getPlanetInfo(planet):
+#     obj = Horizons(id=planet, location='000', epochs=None, id_type=None)
+#     eph = obj.ephemerides()
+#     return eph
 
 def inc_select(channel):
     global targetIndex
@@ -105,47 +103,24 @@ def dec_select(channel):
 
 def select(channel):
     global targetIndex
-    global planets
-    global stepperPinsAZ
-    global stepperPinsEL
     if GPIO.input(channel) == GPIO.LOW:
-        eph = getPlanetInfo(planets[planetIndex])
-        percentageArcAZ = (eph['AZ'][0])/360 #find Azimuth
-        percentageArcEL = (eph['EL'][0])/360 #find Elevation
-        stepsNeededAZ = int(percentageArcAZ*512) #512 steps is 360degrees
-        stepsNeededEL = int(percentageArcEL*512) #512 steps is 360degrees
-
         print("ok button pressed")
+
+        set_direction(MOTOR1, True)
+        step_motor(MOTOR1, 20)
         
-        if stepsNeededAZ > 256:
-            #moveStepperBack(stepperPinsAZ, (512-stepsNeededAZ)) #rotates anticlockwise
-            set_direction(MOTOR1, True)
-            step_motor(MOTOR1, 512-stepsNeededAZ)
-        else:
-            #moveStepper(stepperPinsAZ, stepsNeededAZ) #rotates clockwise
-            set_direction(MOTOR1, False)
-            step_motor(MOTOR1, stepsNeededAZ)
-        time.sleep(1)
-        if stepsNeededEL < 0:
-            #moveStepperBack(stepperPinsEL, -stepsNeededEL) #rotates downwards
-            set_direction(MOTOR2, True)
-            step_motor(MOTOR2, 512-stepsNeededEL)
-        else:
-            #moveStepper(stepperPinsEL, stepsNeededEL) #rotates upwards
-            set_direction(MOTOR2, False)
-            step_motor(MOTOR2, stepsNeededEL)
-        time.sleep(8)
-        #moves back to starting position
-        if stepsNeededEL < 0:
-            moveStepper(stepperPinsEL, -stepsNeededEL)
-        else:
-            moveStepperBack(stepperPinsEL, stepsNeededEL)
-        time.sleep(1)
-        if stepsNeededAZ > 256:
-            moveStepper(stepperPinsAZ, (512-stepsNeededAZ)) #rotates anticlockwise
-        else:
-            moveStepperBack(stepperPinsAZ, stepsNeededAZ) #rotates clockwise
-        time.sleep(1)
+        time.sleep(2)
+        set_direction(MOTOR2, True)
+        step_motor(MOTOR2, 20)
+
+        time.sleep(2)
+        set_direction(MOTOR1, False)
+        step_motor(MOTOR1, 20)
+        
+        time.sleep(2)
+        set_direction(MOTOR2, False)
+        step_motor(MOTOR2, 20)
+        
         
         
 GPIO.add_event_detect(selectBtnPin, GPIO.FALLING, callback=select, bouncetime=200)
@@ -179,19 +154,19 @@ try:
 
         if key == 'q':
             set_direction(MOTOR1, True)
-            step_motor(MOTOR1, 200)
+            step_motor(MOTOR1, 20)
 
         elif key == 'a':
             set_direction(MOTOR1, False)
-            step_motor(MOTOR1, 200)
+            step_motor(MOTOR1, 20)
 
         elif key == 'w':
             set_direction(MOTOR2, True)
-            step_motor(MOTOR2, 200)
+            step_motor(MOTOR2, 20)
 
         elif key == 's':
             set_direction(MOTOR2, False)
-            step_motor(MOTOR2, 200)
+            step_motor(MOTOR2, 20)
 
         elif key == 'x':
             break
