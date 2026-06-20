@@ -5,17 +5,20 @@ import time
 import sys
 import termios
 import tty
+import board
 import neopixel
+from astroquery.jplhorizons import Horizons
+
 
 selectBtnPin = 26
-incBtnPin = 5
-decBtnPin = 6
-pixel_pin = 18
+incBtnPin = 6
+decBtnPin = 5
+pixel_pin = board.D18
 
-num_pixels = 8
+num_pixels = 12
 targetIndex = 0
 #planets = [199, 299, 301, 499, 599, 699, 799, 899, 999]
-#bodies = ['Mercury', 'Venus', 'Moon', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'jwst', 'voyager 1', 'andromeda']
+bodies = ['Mercury', 'Venus', 'Moon', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'jwst', 'voyager 1', 'andromeda']
 
 # ------------------------
 # GPIO SETUP
@@ -70,10 +73,10 @@ def get_key():
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         
-# def getPlanetInfo(planet):
-#     obj = Horizons(id=planet, location='000', epochs=None, id_type=None)
-#     eph = obj.ephemerides()
-#     return eph
+def getPlanetInfo(planet):
+	obj = Horizons(id=planet, location='000', epochs=None, id_type=None)
+	eph = obj.ephemerides()
+	return eph
 
 def inc_select(channel):
     global targetIndex
@@ -84,9 +87,10 @@ def inc_select(channel):
         else:
             targetIndex = 0
         print("inc button pressed")
-        pixels[targetIndex] = WHITE
+        print(targetIndex)
+        pixels[targetIndex] = BLUE
         pixels.show()
-        time.sleep(0.5)
+        #time.sleep(0.5)
 
 def dec_select(channel):
     global targetIndex
@@ -97,9 +101,10 @@ def dec_select(channel):
         else:
             targetIndex = 11
         print("dec button pressed")
-        pixels[targetIndex] = WHITE
+        print(targetIndex)
+        pixels[targetIndex] = BLUE
         pixels.show()
-        time.sleep(0.5)
+        #time.sleep(0.5)
 
 def select(channel):
     global targetIndex
@@ -107,19 +112,19 @@ def select(channel):
         print("ok button pressed")
 
         set_direction(MOTOR1, True)
-        step_motor(MOTOR1, 20)
+        step_motor(MOTOR1, 100)
         
         time.sleep(2)
         set_direction(MOTOR2, True)
-        step_motor(MOTOR2, 20)
+        step_motor(MOTOR2, 100)
 
         time.sleep(2)
         set_direction(MOTOR1, False)
-        step_motor(MOTOR1, 20)
+        step_motor(MOTOR1, 100)
         
         time.sleep(2)
         set_direction(MOTOR2, False)
-        step_motor(MOTOR2, 20)
+        step_motor(MOTOR2, 100)
         
         
         
@@ -154,19 +159,19 @@ try:
 
         if key == 'q':
             set_direction(MOTOR1, True)
-            step_motor(MOTOR1, 20)
+            step_motor(MOTOR1, 500)
 
         elif key == 'a':
             set_direction(MOTOR1, False)
-            step_motor(MOTOR1, 20)
+            step_motor(MOTOR1, 500)
 
         elif key == 'w':
             set_direction(MOTOR2, True)
-            step_motor(MOTOR2, 20)
+            step_motor(MOTOR2, 6400) #6400 is a full circle
 
         elif key == 's':
             set_direction(MOTOR2, False)
-            step_motor(MOTOR2, 20)
+            step_motor(MOTOR2, 3200)
 
         elif key == 'x':
             break
