@@ -1,21 +1,45 @@
-#Bringing it all together
-
 import RPi.GPIO as GPIO
 import time
 import sys
 import termios
 import tty
+import board
 import neopixel
 from astroquery.jplhorizons import Horizons
+from astropy.coordinates import EarthLocation,SkyCoord
+from astropy.time import Time
+from astropy import units as u
+from astropy.coordinates import AltAz
 
-selectBtnPin = 33
-incBtnPin = 37
-decBtnPin = 35
-targetIndex = 0 # bodies?
+select_btn_pin = 26
+inc_btn_pin = 6
+dec_btn_pin = 5
 pixel_pin = board.D18
-num_pixels = 8
-#planets = [199, 299, 301, 499, 599, 699, 799, 899, 999]
-planets = ['Mercury', 'Venus', 'Moon', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'jwst', 'voyager 1', 'andromeda']
+
+is_initiliased = False
+
+steps_full_circle_az = 3200
+steps_full_circle_el = 6400
+current_az_el = [0, 0]
+current_position = [0, 0]
+
+mercury = {"name": "Mercury", "lookup_value": 199}
+venus = {"name": "Venus", "lookup_value": 299}
+moon = {"name": "Moon", "lookup_value": 301}
+mars = {"name": "Mars", "lookup_value": 499}
+jupiter = {"name": "Jupiter", "lookup_value": 599}
+saturn = {"name": "Saturn", "lookup_value": 699}
+uranus = {"name": "Uranus", "lookup_value": 799}
+neptune = {"name": "Neptune", "lookup_value": 899}
+pluto = {"name": "Pluto", "lookup_value": 999}
+jwst = {"name": "jwst", "lookup_value": "jwst"}
+voyager = {"name": "Voyager", "lookup_value": "voyager 1"}
+andromeda = {"name": "Andromeda", "lookup_value": "m31"}
+
+body_index = 11
+num_pixels = 12
+bodies = [mercury, venus, moon, mars, jupiter, saturn, uranus, neptune, pluto, jwst, voyager, andromeda]
+pixel_location = [11, 10, 9, 8, 7, 3, 4, 5, 6, 2, 1, 0]
 
 # ------------------------
 # GPIO SETUP
@@ -32,11 +56,9 @@ for motor in (MOTOR1, MOTOR2):
     GPIO.setup(motor["EN"], GPIO.OUT)
     GPIO.output(motor["EN"], GPIO.LOW)  # Enable (LOW for most drivers)
     
-# GPIO.setmode(GPIO.BOARD) !!! change btn pins above to be BCM number not board number !!
-
-GPIO.setup(selectBtnPin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(incBtnPin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(decBtnPin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(select_btn_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(inc_btn_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(dec_btn_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 pixels = neopixel.NeoPixel(
     pixel_pin, num_pixels, brightness=0.2, auto_write=False, pixel_order=neopixel.GRB
@@ -77,87 +99,211 @@ def getPlanetInfo(planet):
     eph = obj.ephemerides()
     return eph
 
+def get_andromeda_info():
+    # update location if needed (Bristol lat='51.453', lon='-2.573')
+    observing_location = EarthLocation(lat='51.453', lon='-2.573', height=100*u.m)  
+    observing_time = Time.now()  
+    aa = AltAz(location=observing_location, obstime=observing_time)
+
+    coord = SkyCoord('0h42m', '41d16m09.0s') # andromeda has a fixed ra and dec
+    sky_coord_alt_az = coord.transform_to(aa)
+    print(f"Altitude: {sky_coord_alt_az.alt.degree:.2f}°")
+    print(f"Azimuth: {sky_coord_alt_az.az.degree:.2f}°")
+    alt_az = [sky_coord_alt_az.alt.degree.item(), sky_coord_alt_az.az.degree.item()]
+    return alt_az
+
+def get_stepsAz_stepsEl():
+    global body_index
+    if bodies[body_index]["name"] == "Andromeda":
+        alt_az = get_andromeda_info()        
+    else:
+        eph = getPlanetInfo(bodies[body_index]["lookup_value"])
+        alt_az = [eph['AZ'][0], eph['EL'][0]]
+    steps_needed_az = int((alt_az[0]/360)*steps_full_circle_az) #6400 steps is 360degrees
+    steps_needed_el = int((alt_az[1]/360)*steps_full_circle_el) #6400 steps is 360degrees
+    return [steps_needed_az, steps_needed_el]
+
+
 def inc_select(channel):
-    global targetIndex
-    if GPIO.input(channel) == GPIO.LOW:
-        pixels[targetIndex] = OFF
-        if targetIndex < 11:
-            targetIndex = targetIndex + 1
+    global body_index
+    if GPIO.input(channel) == GPIO.HIGH:
+        pixels[pixel_location[body_index]] = OFF
+        if body_index < 11:
+            body_index = body_index + 1
         else:
-            targetIndex = 0
+            body_index = 0
         print("inc button pressed")
-        pixels[targetIndex] = WHITE
+        print(body_index)
+        pixels[pixel_location[body_index]] = BLUE
         pixels.show()
-        time.sleep(0.5)
 
 def dec_select(channel):
-    global targetIndex
-    if GPIO.input(channel) == GPIO.LOW:
-        pixels[targetIndex] = OFF
-        if targetIndex > 0:
-            targetIndex = targetIndex - 1
+    global body_index
+    if GPIO.input(channel) == GPIO.HIGH:
+        pixels[pixel_location[body_index]] = OFF
+        if body_index > 0:
+            body_index = body_index - 1
         else:
-            targetIndex = 11
+            body_index = 11
         print("dec button pressed")
-        pixels[targetIndex] = WHITE
+        print(body_index)
+        pixels[pixel_location[body_index]] = BLUE
         pixels.show()
-        time.sleep(0.5)
+
 
 def select(channel):
-    global targetIndex
-    global planets
-    global stepperPinsAZ
-    global stepperPinsEL
+    # Ignore the first button press, it always triggers for some reason
+    global is_initiliased
+    if is_initiliased == False:
+        is_initiliased = True
+        print("Caught first press")
+        return None
+
+    global body_index
+    global current_az_el
+    if GPIO.input(channel) == GPIO.HIGH:
+        print("select button pressed")
+
+        # get planet info
+        steps_az_el_from_0 = get_stepsAz_stepsEl() # steps from 0, 0
+
+        # need to account for previous location
+        steps_needed_az = steps_az_el_from_0[0] - current_az_el[0]
+        steps_needed_el = steps_az_el_from_0[1] - current_az_el[1]
+
+        print(f"steps needed az = {steps_needed_az}")
+        print(f"steps needed el = {steps_needed_el}")
+
+        # position wire at 180 degrees, dont let it cross 0 to maximise slack in wires
+        # shouldn't happen anyway because we're using delta between positions but added just in case
+
+        if (current_az_el[0] + steps_needed_az) > steps_full_circle_az:
+            steps_needed_az = steps_needed_az - steps_full_circle_az
+        elif (current_az_el[0] + steps_needed_az) < 0:
+            steps_needed_az = steps_needed_az + steps_full_circle_az
+
+        # need to move clockwise for positive delta and anyiclockwise for negative delta
+
+        if steps_needed_az < 0:
+            set_direction(MOTOR1, True) # Rotates anticlockwise
+            step_motor(MOTOR1, -steps_needed_az)
+        else:
+            set_direction(MOTOR1, False) # Rotates clockwise
+            step_motor(MOTOR1, steps_needed_az)
+        time.sleep(1)
+        if steps_needed_el < 0:
+            set_direction(MOTOR2, False) # Rotates downwards
+            step_motor(MOTOR2, -steps_needed_el)
+        else:
+            set_direction(MOTOR2, True) # Rotates upwards
+            step_motor(MOTOR2, steps_needed_el)
+        
+        # update current position
+        current_az_el = [steps_az_el_from_0[0], steps_az_el_from_0[1]]
+        print(f"current az el = {current_az_el}")
+
+        time.sleep(2)
+        
+        # old code
+        # if steps_needed_az > (steps_full_circle/2):
+        #     set_direction(MOTOR1, True) # Rotates anticlockwise
+        #     step_motor(MOTOR1, steps_full_circle-steps_needed_az)
+        # else:
+        #     set_direction(MOTOR1, False) # Rotates clockwise
+        #     step_motor(MOTOR1, steps_needed_az)
+        # time.sleep(1)
+        # if steps_needed_el < 0:
+        #     set_direction(MOTOR2, False) # Rotates downwards
+        #     step_motor(MOTOR2, -steps_needed_el) #steps_needed_el is negative
+        # else:
+        #     set_direction(MOTOR2, True) # Rotates upwards
+        #     step_motor(MOTOR2, steps_needed_el)
+           
+        
+# Start up functions
+
+def increaseAZ(channel):
+    print("increaseAZ")
     if GPIO.input(channel) == GPIO.LOW:
-        eph = getPlanetInfo(planets[planetIndex])
-        percentageArcAZ = (eph['AZ'][0])/360 #find Azimuth
-        percentageArcEL = (eph['EL'][0])/360 #find Elevation
-        stepsNeededAZ = int(percentageArcAZ*512) #512 steps is 360degrees
-        stepsNeededEL = int(percentageArcEL*512) #512 steps is 360degrees
+        print("if statement az")
+        set_direction(MOTOR1, True)
+        step_motor(MOTOR1, 100)
 
-        print("ok button pressed")
-        
-        if stepsNeededAZ > 256:
-            #moveStepperBack(stepperPinsAZ, (512-stepsNeededAZ)) #rotates anticlockwise
-            set_direction(MOTOR1, True)
-            step_motor(MOTOR1, 512-stepsNeededAZ)
-        else:
-            #moveStepper(stepperPinsAZ, stepsNeededAZ) #rotates clockwise
-            set_direction(MOTOR1, False)
-            step_motor(MOTOR1, stepsNeededAZ)
-        time.sleep(1)
-        if stepsNeededEL < 0:
-            #moveStepperBack(stepperPinsEL, -stepsNeededEL) #rotates downwards
-            set_direction(MOTOR2, True)
-            step_motor(MOTOR2, 512-stepsNeededEL)
-        else:
-            #moveStepper(stepperPinsEL, stepsNeededEL) #rotates upwards
-            set_direction(MOTOR2, False)
-            step_motor(MOTOR2, stepsNeededEL)
-        time.sleep(8)
-        #moves back to starting position
-        if stepsNeededEL < 0:
-            moveStepper(stepperPinsEL, -stepsNeededEL)
-        else:
-            moveStepperBack(stepperPinsEL, stepsNeededEL)
-        time.sleep(1)
-        if stepsNeededAZ > 256:
-            moveStepper(stepperPinsAZ, (512-stepsNeededAZ)) #rotates anticlockwise
-        else:
-            moveStepperBack(stepperPinsAZ, stepsNeededAZ) #rotates clockwise
-        time.sleep(1)
-        
-        
-GPIO.add_event_detect(selectBtnPin, GPIO.FALLING, callback=select, bouncetime=200)
-GPIO.add_event_detect(incBtnPin, GPIO.FALLING, callback=inc_select, bouncetime=200)
-GPIO.add_event_detect(decBtnPin, GPIO.FALLING, callback=dec_select, bouncetime=200)
+def decreaseAZ(channel):
+    print("decreaseAZ")
+    if GPIO.input(channel) == GPIO.LOW:
+        print("decrease az if statement")
+        set_direction(MOTOR1, False)
+        step_motor(MOTOR1, 100)
 
+def increaseEL(channel):
+    print("increaseEL")
+    if GPIO.input(channel) == GPIO.LOW:
+        print("increase el if statement")
+        set_direction(MOTOR2, True)
+        step_motor(MOTOR2, 100)
+          
+def decreaseEL(channel):
+    print("decrese el")
+    if GPIO.input(channel) == GPIO.LOW:
+        print("decrease el if ststement")
+        set_direction(MOTOR2, False)
+        step_motor(MOTOR2, 100)
+        
+def clearNeopixels():
+	for location in pixel_location:
+		pixels[location] = OFF
+	pixels.show()
+          
+# Set Altitude
+def startUp():
+    print("adjust vertical")
+    clearNeopixels()
+    pixels[pixel_location[2]] = GREEN
+    pixels[pixel_location[10]] = GREEN
+    pixels.show()
+    GPIO.add_event_detect(select_btn_pin, GPIO.FALLING, callback=startUpNext, bouncetime=200)
+    GPIO.add_event_detect(inc_btn_pin, GPIO.FALLING, callback=increaseEL, bouncetime=200)
+    GPIO.add_event_detect(dec_btn_pin, GPIO.FALLING, callback=decreaseEL, bouncetime=200)
+    time.sleep(1)
+
+# Set Azimuth
+def startUpNext(channel):
+    if GPIO.input(channel) == GPIO.LOW:
+        print("adjust azimuth")
+        clearNeopixels()
+        pixels[pixel_location[5]] = GREEN
+        pixels[pixel_location[8]] = GREEN
+        pixels.show()
+        GPIO.remove_event_detect(select_btn_pin)
+        GPIO.remove_event_detect(inc_btn_pin)
+        GPIO.remove_event_detect(dec_btn_pin)
+        GPIO.add_event_detect(select_btn_pin, GPIO.FALLING, callback=startUpFinish, bouncetime=200)
+        GPIO.add_event_detect(inc_btn_pin, GPIO.FALLING, callback=increaseAZ, bouncetime=200)
+        GPIO.add_event_detect(dec_btn_pin, GPIO.FALLING, callback=decreaseAZ, bouncetime=200)
+        time.sleep(1)
+
+def startUpFinish(channel):
+    if GPIO.input(channel) == GPIO.LOW:
+        GPIO.remove_event_detect(select_btn_pin)
+        GPIO.remove_event_detect(inc_btn_pin)
+        GPIO.remove_event_detect(dec_btn_pin)
+        GPIO.add_event_detect(select_btn_pin, GPIO.FALLING, callback=select, bouncetime=500)#Setup event on falling edge
+        GPIO.add_event_detect(inc_btn_pin, GPIO.FALLING, callback=inc_select, bouncetime=500)
+        GPIO.add_event_detect(dec_btn_pin, GPIO.FALLING, callback=dec_select, bouncetime=500)
+        clearNeopixels()
+        pixels[pixel_location[body_index]] = WHITE
+        pixels.show()
+        #is_initiliased = True
+        print("start up finished")
+        time.sleep(3)
+        
+
+startUp()
 
 # ------------------------
 # MAIN LOOP
 # ------------------------
-
-
 
 print("""
 Controls:
@@ -179,19 +325,19 @@ try:
 
         if key == 'q':
             set_direction(MOTOR1, True)
-            step_motor(MOTOR1, 200)
+            step_motor(MOTOR1, 500)
 
         elif key == 'a':
             set_direction(MOTOR1, False)
-            step_motor(MOTOR1, 200)
+            step_motor(MOTOR1, 500)
 
         elif key == 'w':
             set_direction(MOTOR2, True)
-            step_motor(MOTOR2, 200)
+            step_motor(MOTOR2, 500) #6400 is a full circle
 
         elif key == 's':
             set_direction(MOTOR2, False)
-            step_motor(MOTOR2, 200)
+            step_motor(MOTOR2, 500)
 
         elif key == 'x':
             break
