@@ -1,3 +1,6 @@
+# source myenv/bin/activate
+# sudo -E env PATH=$PATH python3 cosmic-compass.py
+
 import RPi.GPIO as GPIO
 import time
 import sys
@@ -74,8 +77,35 @@ OFF = (0, 0, 0)
 # HELPER FUNCTIONS
 # ------------------------
 
-def step_motor(motor, steps, delay=0.001):
+def step_motor_old(motor, steps, delay=0.001):
     for _ in range(steps):
+        GPIO.output(motor["STEP"], GPIO.HIGH)
+        time.sleep(delay)
+        GPIO.output(motor["STEP"], GPIO.LOW)
+        time.sleep(delay)
+
+def step_motor(motor, steps, min_delay=0.001, max_delay=0.003, accel_steps=100):
+    """
+    steps: total steps to move
+    min_delay: fastest speed
+    max_delay: starting speed
+    accel_steps: how many steps to accelerate/decelerate
+    """
+
+    for i in range(steps):
+        # Acceleration phase
+        if i < accel_steps:
+            delay = max_delay - (i / accel_steps) * (max_delay - min_delay)
+
+        # Deceleration phase
+        elif i > steps - accel_steps:
+            decel_i = i - (steps - accel_steps)
+            delay = min_delay + (decel_i / accel_steps) * (max_delay - min_delay)
+
+        # Constant speed
+        else:
+            delay = min_delay
+
         GPIO.output(motor["STEP"], GPIO.HIGH)
         time.sleep(delay)
         GPIO.output(motor["STEP"], GPIO.LOW)
@@ -106,22 +136,24 @@ def get_andromeda_info():
     aa = AltAz(location=observing_location, obstime=observing_time)
 
     coord = SkyCoord('0h42m', '41d16m09.0s') # andromeda has a fixed ra and dec
-    sky_coord_alt_az = coord.transform_to(aa)
-    print(f"Altitude: {sky_coord_alt_az.alt.degree:.2f}°")
-    print(f"Azimuth: {sky_coord_alt_az.az.degree:.2f}°")
-    alt_az = [sky_coord_alt_az.alt.degree.item(), sky_coord_alt_az.az.degree.item()]
-    return alt_az
+    sky_coord_az_el = coord.transform_to(aa)
+    print(f"Altitude: {sky_coord_az_el.alt.degree:.2f}°")
+    print(f"Azimuth: {sky_coord_az_el.az.degree:.2f}°")
+    az_el = [sky_coord_az_el.az.degree.item(), sky_coord_az_el.alt.degree.item()]
+    return az_el
 
 def get_stepsAz_stepsEl():
     global body_index
     if bodies[body_index]["name"] == "Andromeda":
-        alt_az = get_andromeda_info()        
+        az_el = get_andromeda_info()        
     else:
         eph = getPlanetInfo(bodies[body_index]["lookup_value"])
-        alt_az = [eph['AZ'][0], eph['EL'][0]]
-    steps_needed_az = int((alt_az[0]/360)*steps_full_circle_az) #6400 steps is 360degrees
-    steps_needed_el = int((alt_az[1]/360)*steps_full_circle_el) #6400 steps is 360degrees
+        az_el = [eph['AZ'][0], eph['EL'][0]]
+    steps_needed_az = int((az_el[0]/360)*steps_full_circle_az) #3200 steps is 360degrees
+    steps_needed_el = int((az_el[1]/360)*steps_full_circle_el) #6400 steps is 360degrees
     return [steps_needed_az, steps_needed_el]
+
+# id elevation only 90 degrees? 90 both ways
 
 
 def inc_select(channel):
@@ -163,6 +195,8 @@ def select(channel):
     global current_az_el
     if GPIO.input(channel) == GPIO.HIGH:
         print("select button pressed")
+        pixels[pixel_location[body_index]] = WHITE
+        pixels.show()
 
         # get planet info
         steps_az_el_from_0 = get_stepsAz_stepsEl() # steps from 0, 0
@@ -174,13 +208,10 @@ def select(channel):
         print(f"steps needed az = {steps_needed_az}")
         print(f"steps needed el = {steps_needed_el}")
 
-        # position wire at 180 degrees, dont let it cross 0 to maximise slack in wires
+        # position wire at 0 degrees, dont let it cross 0 to maximise slack in wires
         # shouldn't happen anyway because we're using delta between positions but added just in case
 
-        if (current_az_el[0] + steps_needed_az) > steps_full_circle_az:
-            steps_needed_az = steps_needed_az - steps_full_circle_az
-        elif (current_az_el[0] + steps_needed_az) < 0:
-            steps_needed_az = steps_needed_az + steps_full_circle_az
+        
 
         # need to move clockwise for positive delta and anyiclockwise for negative delta
 
@@ -192,10 +223,10 @@ def select(channel):
             step_motor(MOTOR1, steps_needed_az)
         time.sleep(1)
         if steps_needed_el < 0:
-            set_direction(MOTOR2, False) # Rotates downwards
+            set_direction(MOTOR2, True) # Rotates downwards
             step_motor(MOTOR2, -steps_needed_el)
         else:
-            set_direction(MOTOR2, True) # Rotates upwards
+            set_direction(MOTOR2, False) # Rotates upwards
             step_motor(MOTOR2, steps_needed_el)
         
         # update current position
@@ -226,28 +257,28 @@ def increaseAZ(channel):
     print("increaseAZ")
     if GPIO.input(channel) == GPIO.LOW:
         print("if statement az")
-        set_direction(MOTOR1, True)
+        set_direction(MOTOR1, False)
         step_motor(MOTOR1, 100)
 
 def decreaseAZ(channel):
     print("decreaseAZ")
     if GPIO.input(channel) == GPIO.LOW:
         print("decrease az if statement")
-        set_direction(MOTOR1, False)
+        set_direction(MOTOR1, True)
         step_motor(MOTOR1, 100)
 
 def increaseEL(channel):
     print("increaseEL")
     if GPIO.input(channel) == GPIO.LOW:
         print("increase el if statement")
-        set_direction(MOTOR2, True)
+        set_direction(MOTOR2, False)
         step_motor(MOTOR2, 100)
           
 def decreaseEL(channel):
     print("decrese el")
     if GPIO.input(channel) == GPIO.LOW:
         print("decrease el if ststement")
-        set_direction(MOTOR2, False)
+        set_direction(MOTOR2, True)
         step_motor(MOTOR2, 100)
         
 def clearNeopixels():

@@ -64,6 +64,7 @@ def get_stepsAz_stepsEl():
         eph = getPlanetInfo(bodies[body_index]["lookup_value"])
         print(eph)
         alt_az = [eph['AZ'][0], eph['EL'][0]]
+        print(alt_az)
     steps_needed_az = int((alt_az[0]/360)*steps_full_circle) #6400 steps is 360degrees
     steps_needed_el = int((alt_az[1]/360)*steps_full_circle) #6400 steps is 360degrees
     return [steps_needed_az, steps_needed_el]
