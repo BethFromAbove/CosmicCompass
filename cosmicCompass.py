@@ -20,6 +20,7 @@ dec_btn_pin = 5
 pixel_pin = board.D18
 
 is_initiliased = False
+current_index = 0
 
 steps_full_circle_az = 3200
 steps_full_circle_el = 6400
@@ -39,7 +40,7 @@ jwst = {"name": "jwst", "lookup_value": "jwst"}
 voyager = {"name": "Voyager", "lookup_value": "voyager 1"}
 andromeda = {"name": "Andromeda", "lookup_value": "m31"}
 
-body_index = 11
+body_index = 0
 num_pixels = 12
 bodies = [mercury, venus, moon, mars, jupiter, saturn, uranus, neptune, pluto, jwst, voyager, andromeda]
 pixel_location = [11, 10, 9, 8, 7, 3, 4, 5, 6, 2, 1, 0]
@@ -153,33 +154,39 @@ def get_stepsAz_stepsEl():
     steps_needed_el = int((az_el[1]/360)*steps_full_circle_el) #6400 steps is 360degrees
     return [steps_needed_az, steps_needed_el]
 
-# id elevation only 90 degrees? 90 both ways
-
 
 def inc_select(channel):
     global body_index
+    global current_index
     if GPIO.input(channel) == GPIO.HIGH:
-        pixels[pixel_location[body_index]] = OFF
+        if body_index != current_index:
+            pixels[pixel_location[body_index]] = OFF
         if body_index < 11:
             body_index = body_index + 1
         else:
             body_index = 0
-        print("inc button pressed")
-        print(body_index)
-        pixels[pixel_location[body_index]] = BLUE
+        if body_index == current_index:
+            pixels[pixel_location[body_index]] = WHITE
+        else:
+            pixels[pixel_location[body_index]] = BLUE
         pixels.show()
 
 def dec_select(channel):
     global body_index
+    global current_index
     if GPIO.input(channel) == GPIO.HIGH:
-        pixels[pixel_location[body_index]] = OFF
+        if body_index != current_index:
+            pixels[pixel_location[body_index]] = OFF
+        
         if body_index > 0:
             body_index = body_index - 1
         else:
             body_index = 11
-        print("dec button pressed")
-        print(body_index)
-        pixels[pixel_location[body_index]] = BLUE
+        
+        if body_index == current_index:
+            pixels[pixel_location[body_index]] = WHITE
+        else:
+            pixels[pixel_location[body_index]] = BLUE
         pixels.show()
 
 
@@ -192,9 +199,11 @@ def select(channel):
         return None
 
     global body_index
+    global current_index
     global current_az_el
     if GPIO.input(channel) == GPIO.HIGH:
         print("select button pressed")
+        pixels[pixel_location[current_index]] = OFF
         pixels[pixel_location[body_index]] = WHITE
         pixels.show()
 
@@ -208,12 +217,7 @@ def select(channel):
         print(f"steps needed az = {steps_needed_az}")
         print(f"steps needed el = {steps_needed_el}")
 
-        # position wire at 0 degrees, dont let it cross 0 to maximise slack in wires
-        # shouldn't happen anyway because we're using delta between positions but added just in case
-
-        
-
-        # need to move clockwise for positive delta and anyiclockwise for negative delta
+        # need to move clockwise for positive delta and anticlockwise for negative delta
 
         if steps_needed_az < 0:
             set_direction(MOTOR1, True) # Rotates anticlockwise
@@ -232,23 +236,9 @@ def select(channel):
         # update current position
         current_az_el = [steps_az_el_from_0[0], steps_az_el_from_0[1]]
         print(f"current az el = {current_az_el}")
+        current_index = body_index
 
         time.sleep(2)
-        
-        # old code
-        # if steps_needed_az > (steps_full_circle/2):
-        #     set_direction(MOTOR1, True) # Rotates anticlockwise
-        #     step_motor(MOTOR1, steps_full_circle-steps_needed_az)
-        # else:
-        #     set_direction(MOTOR1, False) # Rotates clockwise
-        #     step_motor(MOTOR1, steps_needed_az)
-        # time.sleep(1)
-        # if steps_needed_el < 0:
-        #     set_direction(MOTOR2, False) # Rotates downwards
-        #     step_motor(MOTOR2, -steps_needed_el) #steps_needed_el is negative
-        # else:
-        #     set_direction(MOTOR2, True) # Rotates upwards
-        #     step_motor(MOTOR2, steps_needed_el)
            
         
 # Start up functions
@@ -256,28 +246,24 @@ def select(channel):
 def increaseAZ(channel):
     print("increaseAZ")
     if GPIO.input(channel) == GPIO.LOW:
-        print("if statement az")
         set_direction(MOTOR1, False)
         step_motor(MOTOR1, 100)
 
 def decreaseAZ(channel):
     print("decreaseAZ")
     if GPIO.input(channel) == GPIO.LOW:
-        print("decrease az if statement")
         set_direction(MOTOR1, True)
         step_motor(MOTOR1, 100)
 
 def increaseEL(channel):
     print("increaseEL")
     if GPIO.input(channel) == GPIO.LOW:
-        print("increase el if statement")
         set_direction(MOTOR2, False)
         step_motor(MOTOR2, 100)
           
 def decreaseEL(channel):
     print("decrese el")
     if GPIO.input(channel) == GPIO.LOW:
-        print("decrease el if ststement")
         set_direction(MOTOR2, True)
         step_motor(MOTOR2, 100)
         
@@ -325,7 +311,6 @@ def startUpFinish(channel):
         clearNeopixels()
         pixels[pixel_location[body_index]] = WHITE
         pixels.show()
-        #is_initiliased = True
         print("start up finished")
         time.sleep(3)
         
